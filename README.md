@@ -87,20 +87,24 @@ VITE_API_BASE_URL=https://your-render-service.onrender.com
 1. Create a new Web Service in Render.
 2. Connect the GitHub repository.
 3. Set root directory to `backend`.
-4. Use these settings:
+4. Pin Python to `3.11.8`.
+5. Use these settings:
 
 ```text
 Build Command: pip install -r requirements.txt
 Start Command: gunicorn app:app
 ```
 
-1. Add these environment variables in Render:
+6. Add these environment variables in Render:
 
 ```text
+PYTHON_VERSION=3.11.8
 HF_MODEL_REPO_ID=your-huggingface-username/plant-disease-detection-model
 HF_MODEL_FILENAME=plant_disease_model_1_latest.pt
 CORS_ALLOWED_ORIGINS=https://your-vercel-project.vercel.app
 ```
+
+If you deploy with `render.yaml`, the repository already pins Python for you. This matters because newer Render defaults, such as Python 3.14, do not have compatible wheels for the pinned `pandas` and `torch` versions in this backend.
 
 If you want to bypass Hugging Face during local testing, set `MODEL_PATH` instead.
 

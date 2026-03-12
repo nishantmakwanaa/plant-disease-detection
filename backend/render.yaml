@@ -7,6 +7,8 @@ services:
     startCommand: gunicorn app:app
     plan: free
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.8
       - key: HF_MODEL_REPO_ID
         sync: false
       - key: HF_MODEL_FILENAME
