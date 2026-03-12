@@ -1,16 +1,24 @@
 import os
+import csv
+import gc
 from functools import lru_cache
 from pathlib import Path
 from threading import Lock
 
-import pandas as pd
+os.environ.setdefault("MALLOC_ARENA_MAX", "2")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+os.environ.setdefault("TORCH_NUM_THREADS", "1")
+
+import numpy as np
 import torch
 import torch.nn.functional as F
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from huggingface_hub import hf_hub_download
 from PIL import Image, UnidentifiedImageError
-from torchvision import transforms
 
 from model import CNN
 
@@ -23,18 +31,21 @@ CLASS_COUNT = 39
 MODEL_FILENAME = os.getenv("HF_MODEL_FILENAME", "plant_disease_model_1_latest.pt")
 MODEL_LOCK = Lock()
 
-transform = transforms.Compose(
-    [
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-    ]
-)
+try:
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
+except RuntimeError:
+    pass
 
 
 def load_csv_data():
-    disease_frame = pd.read_csv(DISEASE_INFO_PATH, encoding="cp1252")
-    supplement_frame = pd.read_csv(SUPPLEMENT_INFO_PATH, encoding="cp1252")
-    return disease_frame, supplement_frame
+    with DISEASE_INFO_PATH.open("r", encoding="cp1252", newline="") as disease_file:
+        disease_rows = list(csv.DictReader(disease_file))
+
+    with SUPPLEMENT_INFO_PATH.open("r", encoding="cp1252", newline="") as supplement_file:
+        supplement_rows = list(csv.DictReader(supplement_file))
+
+    return disease_rows, supplement_rows
 
 
 @lru_cache(maxsize=1)
@@ -77,6 +88,8 @@ def load_model():
         model = checkpoint
 
     model.eval()
+    del checkpoint
+    gc.collect()
     return model
 
 
@@ -87,9 +100,16 @@ def get_model():
 
 
 def normalize_text(value):
-    if pd.isna(value):
+    if value is None:
         return ""
     return str(value).strip()
+
+
+def preprocess_image(image: Image.Image) -> torch.Tensor:
+    resized_image = image.resize((224, 224))
+    image_array = np.asarray(resized_image, dtype=np.float32) / 255.0
+    image_tensor = torch.from_numpy(np.transpose(image_array, (2, 0, 1)))
+    return image_tensor.unsqueeze(0)
 
 
 def format_label(raw_label: str) -> str:
@@ -102,8 +122,8 @@ def is_healthy_label(raw_label: str) -> bool:
 
 def build_prediction_response(prediction_index: int, confidence: float):
     disease_info, supplement_info = get_catalog_data()
-    disease_row = disease_info.iloc[prediction_index]
-    supplement_row = supplement_info.iloc[prediction_index]
+    disease_row = disease_info[prediction_index]
+    supplement_row = supplement_info[prediction_index]
     raw_name = normalize_text(supplement_row["disease_name"])
     disease_name = normalize_text(disease_row["disease_name"])
 
@@ -145,13 +165,22 @@ def create_app():
             }
         )
 
+    @app.post("/api/warmup")
+    def warmup_model():
+        try:
+            get_model()
+        except Exception as error:
+            return jsonify({"status": "error", "error": f"Model warmup failed: {error}"}), 500
+
+        return jsonify({"status": "ok", "modelLoaded": True})
+
     @app.get("/api/catalog")
     def catalog():
         _, supplement_info = get_catalog_data()
         crop_names = sorted(
             {
                 format_label(label.split(" - ")[0])
-                for label in (format_label(name) for name in supplement_info["disease_name"].fillna(""))
+                for label in (format_label(row.get("disease_name", "")) for row in supplement_info)
                 if label and "background without leaves" not in label.lower()
             }
         )
@@ -177,7 +206,7 @@ def create_app():
         except UnidentifiedImageError:
             return jsonify({"error": "Unsupported image format. Upload PNG, JPG, or JPEG."}), 400
 
-        input_tensor = transform(image).unsqueeze(0)
+        input_tensor = preprocess_image(image)
 
         with torch.no_grad():
             try:

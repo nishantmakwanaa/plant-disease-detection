@@ -92,7 +92,7 @@ VITE_API_BASE_URL=https://your-render-service.onrender.com
 
 ```text
 Build Command: pip install -r requirements.txt
-Start Command: gunicorn app:app --bind 0.0.0.0:$PORT
+Start Command: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 180
 ```
 
 6. Add these environment variables in Render:
@@ -105,6 +105,8 @@ CORS_ALLOWED_ORIGINS=https://your-vercel-project.vercel.app
 ```
 
 If you deploy with `render.yaml`, the repository already pins Python for you. This matters because newer Render defaults, such as Python 3.14, do not have compatible wheels for the pinned `pandas` and `torch` versions in this backend.
+
+For the first cold start, call `POST /api/warmup` once after deploy so the Hugging Face model download and deserialization happen before browser prediction traffic hits `/api/predict`.
 
 If you want to bypass Hugging Face during local testing, set `MODEL_PATH` instead.
 
