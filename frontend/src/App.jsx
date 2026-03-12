@@ -3,6 +3,32 @@ import { useEffect, useMemo, useState } from "react";
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5000").replace(/\/$/, "");
 
+
+async function readJsonSafely(response) {
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    return null;
+  }
+
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+
+function getApiErrorMessage(error, fallbackMessage) {
+  if (error instanceof Error && error.message) {
+    if (error.message === "Failed to fetch") {
+      return "The backend is unreachable or still waking up. Wait a moment and try again.";
+    }
+    return error.message;
+  }
+
+  return fallbackMessage;
+}
+
 const preventionTips = [
   "Inspect leaves weekly and isolate infected plants early.",
   "Avoid watering foliage late in the day to reduce fungal spread.",
@@ -37,6 +63,7 @@ function App() {
   const [previewUrl, setPreviewUrl] = useState("");
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  const [apiNotice, setApiNotice] = useState("Preparing the backend for the first prediction.");
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -45,10 +72,10 @@ function App() {
     async function loadCatalog() {
       try {
         const response = await fetch(`${apiBaseUrl}/api/catalog`);
+        const data = await readJsonSafely(response);
         if (!response.ok) {
-          throw new Error("Catalog request failed.");
+          throw new Error(data?.error || "Catalog request failed.");
         }
-        const data = await response.json();
         if (!ignore) {
           setCatalog(data);
         }
@@ -59,7 +86,32 @@ function App() {
       }
     }
 
+    async function warmupBackend() {
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/warmup`, { method: "POST" });
+        const data = await readJsonSafely(response);
+
+        if (ignore) {
+          return;
+        }
+
+        if (response.ok && response.status !== 202) {
+          setApiNotice("");
+          return;
+        }
+
+        setApiNotice(
+          data?.message || "Backend cold start detected. The first prediction can take a little longer."
+        );
+      } catch {
+        if (!ignore) {
+          setApiNotice("Backend cold start detected. If prediction fails, wait a moment and retry.");
+        }
+      }
+    }
+
     loadCatalog();
+    warmupBackend();
 
     return () => {
       ignore = true;
@@ -102,13 +154,14 @@ function App() {
         method: "POST",
         body: formData,
       });
-      const data = await response.json();
+      const data = await readJsonSafely(response);
       if (!response.ok) {
-        throw new Error(data.error || "Prediction failed.");
+        throw new Error(data?.error || "Prediction failed.");
       }
+      setApiNotice("");
       setResult(data);
     } catch (submissionError) {
-      setError(submissionError.message || "Prediction failed.");
+      setError(getApiErrorMessage(submissionError, "Prediction failed."));
     } finally {
       setIsLoading(false);
     }
@@ -229,6 +282,7 @@ function App() {
               </button>
 
               {error ? <p className="status-message error">{error}</p> : null}
+              {!error && apiNotice ? <p className="status-message">{apiNotice}</p> : null}
             </form>
           </div>
 

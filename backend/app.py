@@ -3,7 +3,7 @@ import csv
 import gc
 from functools import lru_cache
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 
 os.environ.setdefault("MALLOC_ARENA_MAX", "2")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
@@ -30,6 +30,9 @@ SUPPLEMENT_INFO_PATH = Path(os.getenv("SUPPLEMENT_INFO_PATH", DATA_DIR / "supple
 CLASS_COUNT = 39
 MODEL_FILENAME = os.getenv("HF_MODEL_FILENAME", "plant_disease_model_1_latest.pt")
 MODEL_LOCK = Lock()
+MODEL_STATE_LOCK = Lock()
+MODEL_STATE = {"status": "idle", "error": ""}
+MODEL_WARMUP_THREAD = None
 
 try:
     torch.set_num_threads(1)
@@ -99,6 +102,51 @@ def get_model():
         return load_model()
 
 
+def get_model_state():
+    with MODEL_STATE_LOCK:
+        return dict(MODEL_STATE)
+
+
+def set_model_state(status: str, error: str = ""):
+    with MODEL_STATE_LOCK:
+        MODEL_STATE["status"] = status
+        MODEL_STATE["error"] = error
+
+
+def _load_model_in_background():
+    global MODEL_WARMUP_THREAD
+
+    try:
+        get_model()
+    except Exception as error:
+        set_model_state("error", str(error))
+    else:
+        set_model_state("ready")
+    finally:
+        with MODEL_STATE_LOCK:
+            MODEL_WARMUP_THREAD = None
+
+
+def ensure_model_warmup(force: bool = False):
+    global MODEL_WARMUP_THREAD
+
+    with MODEL_STATE_LOCK:
+        current_state = dict(MODEL_STATE)
+        has_active_thread = MODEL_WARMUP_THREAD is not None and MODEL_WARMUP_THREAD.is_alive()
+
+        if current_state["status"] == "ready":
+            return current_state
+
+        if has_active_thread and not force:
+            return current_state
+
+        MODEL_STATE["status"] = "loading"
+        MODEL_STATE["error"] = ""
+        MODEL_WARMUP_THREAD = Thread(target=_load_model_in_background, daemon=True)
+        MODEL_WARMUP_THREAD.start()
+        return dict(MODEL_STATE)
+
+
 def normalize_text(value):
     if value is None:
         return ""
@@ -156,23 +204,36 @@ def create_app():
 
     @app.get("/api/health")
     def health_check():
+        model_state = get_model_state()
         return jsonify(
             {
                 "status": "ok",
                 "model": MODEL_FILENAME,
                 "classes": CLASS_COUNT,
-                "modelLoaded": get_model.cache_info().currsize > 0,
+                "modelLoaded": model_state["status"] == "ready",
+                "modelStatus": model_state["status"],
+                "modelError": model_state["error"],
             }
         )
 
     @app.post("/api/warmup")
     def warmup_model():
-        try:
-            get_model()
-        except Exception as error:
-            return jsonify({"status": "error", "error": f"Model warmup failed: {error}"}), 500
+        model_state = get_model_state()
+        if model_state["status"] == "ready":
+            return jsonify({"status": "ok", "modelLoaded": True, "modelStatus": "ready"})
 
-        return jsonify({"status": "ok", "modelLoaded": True})
+        model_state = ensure_model_warmup(force=model_state["status"] == "error")
+        return (
+            jsonify(
+                {
+                    "status": "warming",
+                    "modelLoaded": False,
+                    "modelStatus": model_state["status"],
+                    "message": "Model warmup started. Retry prediction after the backend finishes loading the model.",
+                }
+            ),
+            202,
+        )
 
     @app.get("/api/catalog")
     def catalog():
@@ -194,6 +255,21 @@ def create_app():
 
     @app.post("/api/predict")
     def predict():
+        model_state = get_model_state()
+        if model_state["status"] != "ready":
+            model_state = ensure_model_warmup(force=model_state["status"] == "error")
+            if model_state["status"] != "ready":
+                response = jsonify(
+                    {
+                        "error": "Model is still warming up. Wait a moment and try again.",
+                        "modelLoaded": False,
+                        "modelStatus": model_state["status"],
+                    }
+                )
+                response.status_code = 503
+                response.headers["Retry-After"] = "20"
+                return response
+
         if "file" not in request.files:
             return jsonify({"error": "Image file is required under the 'file' field."}), 400
 
@@ -212,6 +288,7 @@ def create_app():
             try:
                 model = get_model()
             except Exception as error:
+                set_model_state("error", str(error))
                 return jsonify({"error": f"Model could not be loaded: {error}"}), 500
 
             output_tensor = model(input_tensor)
