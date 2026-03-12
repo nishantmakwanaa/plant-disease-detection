@@ -92,7 +92,7 @@ VITE_API_BASE_URL=https://your-render-service.onrender.com
 
 ```text
 Build Command: pip install -r requirements.txt
-Start Command: gunicorn app:app
+Start Command: gunicorn app:app --bind 0.0.0.0:$PORT
 ```
 
 6. Add these environment variables in Render:

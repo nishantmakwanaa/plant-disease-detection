@@ -1,5 +1,7 @@
 import os
+from functools import lru_cache
 from pathlib import Path
+from threading import Lock
 
 import pandas as pd
 import torch
@@ -19,6 +21,7 @@ DISEASE_INFO_PATH = Path(os.getenv("DISEASE_INFO_PATH", DATA_DIR / "disease_info
 SUPPLEMENT_INFO_PATH = Path(os.getenv("SUPPLEMENT_INFO_PATH", DATA_DIR / "supplement_info.csv"))
 CLASS_COUNT = 39
 MODEL_FILENAME = os.getenv("HF_MODEL_FILENAME", "plant_disease_model_1_latest.pt")
+MODEL_LOCK = Lock()
 
 transform = transforms.Compose(
     [
@@ -32,6 +35,11 @@ def load_csv_data():
     disease_frame = pd.read_csv(DISEASE_INFO_PATH, encoding="cp1252")
     supplement_frame = pd.read_csv(SUPPLEMENT_INFO_PATH, encoding="cp1252")
     return disease_frame, supplement_frame
+
+
+@lru_cache(maxsize=1)
+def get_catalog_data():
+    return load_csv_data()
 
 
 def resolve_model_path() -> Path:
@@ -72,6 +80,12 @@ def load_model():
     return model
 
 
+@lru_cache(maxsize=1)
+def get_model():
+    with MODEL_LOCK:
+        return load_model()
+
+
 def normalize_text(value):
     if pd.isna(value):
         return ""
@@ -87,8 +101,9 @@ def is_healthy_label(raw_label: str) -> bool:
 
 
 def build_prediction_response(prediction_index: int, confidence: float):
-    disease_row = DISEASE_INFO.iloc[prediction_index]
-    supplement_row = SUPPLEMENT_INFO.iloc[prediction_index]
+    disease_info, supplement_info = get_catalog_data()
+    disease_row = disease_info.iloc[prediction_index]
+    supplement_row = supplement_info.iloc[prediction_index]
     raw_name = normalize_text(supplement_row["disease_name"])
     disease_name = normalize_text(disease_row["disease_name"])
 
@@ -121,14 +136,22 @@ def create_app():
 
     @app.get("/api/health")
     def health_check():
-        return jsonify({"status": "ok", "model": MODEL_FILENAME, "classes": CLASS_COUNT})
+        return jsonify(
+            {
+                "status": "ok",
+                "model": MODEL_FILENAME,
+                "classes": CLASS_COUNT,
+                "modelLoaded": get_model.cache_info().currsize > 0,
+            }
+        )
 
     @app.get("/api/catalog")
     def catalog():
+        _, supplement_info = get_catalog_data()
         crop_names = sorted(
             {
                 format_label(label.split(" - ")[0])
-                for label in (format_label(name) for name in SUPPLEMENT_INFO["disease_name"].fillna(""))
+                for label in (format_label(name) for name in supplement_info["disease_name"].fillna(""))
                 if label and "background without leaves" not in label.lower()
             }
         )
@@ -157,7 +180,12 @@ def create_app():
         input_tensor = transform(image).unsqueeze(0)
 
         with torch.no_grad():
-            output_tensor = MODEL(input_tensor)
+            try:
+                model = get_model()
+            except Exception as error:
+                return jsonify({"error": f"Model could not be loaded: {error}"}), 500
+
+            output_tensor = model(input_tensor)
             probabilities = F.softmax(output_tensor, dim=1)[0]
             prediction_index = int(torch.argmax(probabilities).item())
             confidence = float(probabilities[prediction_index].item())
@@ -171,8 +199,6 @@ def create_app():
     return app
 
 
-DISEASE_INFO, SUPPLEMENT_INFO = load_csv_data()
-MODEL = load_model()
 app = create_app()
 
 
