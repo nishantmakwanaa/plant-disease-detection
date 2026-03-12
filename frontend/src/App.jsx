@@ -1,0 +1,333 @@
+import { useEffect, useMemo, useState } from "react";
+
+
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5000").replace(/\/$/, "");
+
+const preventionTips = [
+  "Inspect leaves weekly and isolate infected plants early.",
+  "Avoid watering foliage late in the day to reduce fungal spread.",
+  "Rotate crops and clean tools between plant beds.",
+  "Use balanced fertilizer to support natural plant resistance.",
+];
+
+const deploymentCards = [
+  {
+    title: "Frontend on Vercel",
+    text: "React + Vite ships as a static build with fast global delivery and simple environment variables.",
+  },
+  {
+    title: "Backend on Render",
+    text: "Flask serves a dedicated inference API with health and prediction endpoints for the UI.",
+  },
+  {
+    title: "Model on Hugging Face",
+    text: "The backend downloads the PyTorch model from Hugging Face at startup, so the repo stays lightweight.",
+  },
+];
+
+const creatorLinks = [
+  { label: "GitHub", href: "https://github.com/nishantmakwanaa" },
+  { label: "LinkedIn", href: "https://linkedin.com/in/nishantmakwanaa" },
+  { label: "Portfolio", href: "https://nishantmakwanaa.lovable.app" },
+];
+
+function App() {
+  const [catalog, setCatalog] = useState({ supportedCrops: [], totalClasses: 39 });
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadCatalog() {
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/catalog`);
+        if (!response.ok) {
+          throw new Error("Catalog request failed.");
+        }
+        const data = await response.json();
+        if (!ignore) {
+          setCatalog(data);
+        }
+      } catch (_catalogError) {
+        if (!ignore) {
+          setCatalog({ supportedCrops: [], totalClasses: 39 });
+        }
+      }
+    }
+
+    loadCatalog();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedFile) {
+      setPreviewUrl("");
+      return undefined;
+    }
+
+    const objectUrl = URL.createObjectURL(selectedFile);
+    setPreviewUrl(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [selectedFile]);
+
+  const cropsPreview = useMemo(() => catalog.supportedCrops.slice(0, 8), [catalog.supportedCrops]);
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+
+    if (!selectedFile) {
+      setError("Choose a leaf image before running the diagnosis.");
+      return;
+    }
+
+    setError("");
+    setIsLoading(true);
+    setResult(null);
+
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/predict`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Prediction failed.");
+      }
+      setResult(data);
+    } catch (submissionError) {
+      setError(submissionError.message || "Prediction failed.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  return (
+    <div className="app-shell">
+      <div className="ambient ambient-left" />
+      <div className="ambient ambient-right" />
+
+      <header className="hero-section">
+        <nav className="topbar">
+          <div>
+            <p className="eyebrow">Plant Disease Detection</p>
+            <h1>AI-assisted crop diagnosis with a production-ready deployment split.</h1>
+          </div>
+          <a className="ghost-button" href="#analyzer">
+            Run Diagnosis
+          </a>
+        </nav>
+
+        <div className="hero-grid">
+          <section className="hero-copy glass-panel reveal">
+            <p className="eyebrow">Created by Nishant Makwana</p>
+            <p className="hero-lead">
+              Upload a plant leaf image, call the Render API, and get disease insights powered by a
+              PyTorch model hosted through Hugging Face.
+            </p>
+            <div className="hero-actions">
+              <a className="primary-button" href="#analyzer">
+                Start Prediction
+              </a>
+              <a className="secondary-button" href="#creator">
+                About Creator
+              </a>
+            </div>
+            <div className="stats-grid">
+              <article>
+                <strong>{catalog.totalClasses || 39}</strong>
+                <span>Model classes</span>
+              </article>
+              <article>
+                <strong>{catalog.supportedCrops.length || 14}</strong>
+                <span>Supported crops</span>
+              </article>
+              <article>
+                <strong>3</strong>
+                <span>Free services</span>
+              </article>
+            </div>
+          </section>
+
+          <aside className="hero-showcase glass-panel reveal delay-1">
+            <div className="pulse-chip">Optimized for desktop and mobile screens</div>
+            <div className="crop-chip-grid">
+              {cropsPreview.map((crop) => (
+                <span key={crop}>{crop}</span>
+              ))}
+            </div>
+            <div className="diagram-card">
+              <span>User</span>
+              <div className="diagram-arrow" />
+              <span>Vercel Frontend</span>
+              <div className="diagram-arrow" />
+              <span>Render API</span>
+              <div className="diagram-arrow" />
+              <span>Hugging Face Model</span>
+            </div>
+          </aside>
+        </div>
+      </header>
+
+      <main>
+        <section className="content-section reveal">
+          <div className="section-heading">
+            <p className="eyebrow">Deployment structure</p>
+            <h2>Free hosting split with clear responsibility boundaries.</h2>
+          </div>
+          <div className="card-grid three-up">
+            {deploymentCards.map((card) => (
+              <article key={card.title} className="info-card glass-panel">
+                <h3>{card.title}</h3>
+                <p>{card.text}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="content-section analyzer-grid" id="analyzer">
+          <div className="glass-panel uploader-panel reveal">
+            <div className="section-heading compact">
+              <p className="eyebrow">Analyzer</p>
+              <h2>Upload a leaf image and call the deployed Flask API.</h2>
+            </div>
+
+            <form onSubmit={handleSubmit} className="upload-form">
+              <label className="upload-dropzone" htmlFor="leaf-upload">
+                <input
+                  id="leaf-upload"
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg"
+                  onChange={(event) => setSelectedFile(event.target.files?.[0] || null)}
+                />
+                <span className="upload-title">Drop a leaf image here or click to browse</span>
+                <span className="upload-subtitle">PNG, JPG, or JPEG up to 10 MB</span>
+              </label>
+
+              {selectedFile ? <p className="file-name">Selected: {selectedFile.name}</p> : null}
+
+              {previewUrl ? (
+                <div className="preview-frame">
+                  <img src={previewUrl} alt="Leaf preview" />
+                </div>
+              ) : null}
+
+              <button className="primary-button full-width" type="submit" disabled={isLoading}>
+                {isLoading ? "Analyzing image..." : "Predict Plant Disease"}
+              </button>
+
+              {error ? <p className="status-message error">{error}</p> : null}
+            </form>
+          </div>
+
+          <div className="glass-panel result-panel reveal delay-1">
+            <div className="section-heading compact">
+              <p className="eyebrow">Prediction result</p>
+              <h2>{result ? result.displayName : "Your diagnosis will appear here."}</h2>
+            </div>
+
+            {result ? (
+              <div className="result-stack">
+                <div className="confidence-row">
+                  <span className="confidence-label">Confidence</span>
+                  <strong>{result.confidence}%</strong>
+                </div>
+                <p>{result.description}</p>
+                <div className="split-panel">
+                  <article>
+                    <h3>{result.isHealthy ? "Plant care guidance" : "Prevention steps"}</h3>
+                    <p>{result.possibleSteps}</p>
+                  </article>
+                  <article>
+                    <h3>{result.isHealthy ? "Recommended fertilizer" : "Recommended supplement"}</h3>
+                    <p>{result.supplement?.name || "No supplement linked for this class."}</p>
+                    {result.supplement?.buyLink ? (
+                      <a className="secondary-button inline-button" href={result.supplement.buyLink} target="_blank" rel="noreferrer">
+                        View Product
+                      </a>
+                    ) : null}
+                  </article>
+                </div>
+                {result.referenceImage ? (
+                  <div className="reference-frame">
+                    <img src={result.referenceImage} alt={result.displayName} />
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <p>
+                  The API response includes the disease label, confidence score, prevention guidance,
+                  and supplement metadata from the original project dataset.
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="content-section reveal">
+          <div className="card-grid two-up">
+            <article className="glass-panel info-card">
+              <div className="section-heading compact">
+                <p className="eyebrow">Healthy ops</p>
+                <h2>What changed in the codebase</h2>
+              </div>
+              <ul className="feature-list">
+                <li>Frontend moved into a standalone React app ready for Vercel.</li>
+                <li>Backend now exposes JSON APIs for Render deployment.</li>
+                <li>Model loading supports Hugging Face Hub instead of committing large binaries.</li>
+                <li>Project branding and creator details are updated across the app.</li>
+              </ul>
+            </article>
+
+            <article className="glass-panel info-card">
+              <div className="section-heading compact">
+                <p className="eyebrow">Prevention basics</p>
+                <h2>Field practices worth keeping</h2>
+              </div>
+              <ul className="feature-list">
+                {preventionTips.map((tip) => (
+                  <li key={tip}>{tip}</li>
+                ))}
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section className="content-section reveal" id="creator">
+          <div className="glass-panel creator-panel">
+            <div className="section-heading compact">
+              <p className="eyebrow">Creator</p>
+              <h2>Project created by Nishant Makwana</h2>
+            </div>
+            <p>
+              This refresh keeps the original plant diagnosis idea, but restructures it for modern free
+              deployment and a stronger portfolio presentation.
+            </p>
+            <div className="link-row">
+              {creatorLinks.map((link) => (
+                <a key={link.label} className="secondary-button inline-button" href={link.href} target="_blank" rel="noreferrer">
+                  {link.label}
+                </a>
+              ))}
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+export default App;

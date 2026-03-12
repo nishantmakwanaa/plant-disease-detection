@@ -1,47 +1,140 @@
-# ⭐Plant-Disease-Detection
-* Plant Disease is necessary for every farmer so we are created Plant disease detection using Deep learning. In which we are using convolutional Neural Network for classifying Leaf images into 39 Different Categories. The Convolutional Neural Code build in Pytorch Framework. For Training we are using Plant village dataset. Dataset Link is in My Blog Section.
+# Plant Disease Detection
 
-## ⭐Run Project in your Machine
-* You must have **Python3.8** installed in your machine.
-* Create a Python Virtual Environment & Activate Virtual Environment [Link](https://docs.python.org/3/tutorial/venv.html)
-* Install all the dependencies using below command
-    `pip install -r requirements.txt`
-* Go to the `Flask Deployed App` folder.
-* Download the pre-trained model file `plant_disease_model_1.pt` from [here](https://drive.google.com/drive/folders/1ewJWAiduGuld_9oGSrTuLumg9y62qS6A?usp=share_link)
-* Add the downloaded file in `Flask Deployed App` folder.
-* Run the Flask app using below command `python3 app.py`
-* You can also use downloaded file in `Model` Section and play with it using Jupyter Notebook.
+Plant Disease Detection is a modernized split-deployment Flask + PyTorch project. The app now targets a free production setup with:
 
-## ⭐Contribution ( Open Source )
-* This Project is now open source.
-* All the developers who are intrested they can contribute in this project.
-* Yo can make UI better , make Deep learning model more powerful , add informative markdown file in section...
-* If you will change Deep learning make sure you upload updated markdown file (.md) , .pdf and .ipynb in particular section.
-* Make sure your code is working. It will not have any type or error.
-* You have to fork this project then make a pull request after you testing will successful.
-* How to make pull request : https://opensource.com/article/19/7/create-pull-request-github
+- `frontend/` for a React + Vite UI deployed on Vercel
+- `backend/` for a Flask API deployed on Render
+- a PyTorch model stored on Hugging Face and downloaded at backend startup
 
+## Project Details
 
-## ⭐Testing Images
+- Project name: Plant Disease Detection
+- Created by: Nishant Makwana
+- GitHub: [github.com/nishantmakwanaa](https://github.com/nishantmakwanaa)
+- LinkedIn: [linkedin.com/in/nishantmakwanaa](https://linkedin.com/in/nishantmakwanaa)
+- Portfolio: [nishantmakwanaa.lovable.app](https://nishantmakwanaa.lovable.app)
 
-* If you do not have leaf images then you can use test images located in test_images folder
-* Each image has its corresponding disease name, so you can verify whether the model is working perfectly or not
+## Architecture
 
-## ⭐Blog Link
-<a href="https://medium.com/analytics-vidhya/plant-disease-detection-using-convolutional-neural-networks-and-pytorch-87c00c54c88f" target = "_blank">Plant Disease Detection Using Convolutional Neural Networks with PyTorch</a><br>
+```text
+User
+    -> Frontend (React UI on Vercel)
+    -> Backend API (Flask on Render)
+    -> Model weights (PyTorch file on Hugging Face)
+```
 
-## ⭐Deployed App
-<a href="https://plant-disease-detection-ai.herokuapp.com/" target = "_blank">Plant-Disease-Detection-AI</a><br>
+## Folder Layout
 
+```text
+frontend/
+    React UI for Vercel
 
-## ⭐Snippet of Web App :
-#### Main page
-<img src = "demo_images/1.png" > <br>
-#### AI Engine 
-<img src = "demo_images/2.png"> <br>
-#### Results Page 
-<img src = "demo_images/3.png"> <br>
-#### Supplements/Fertilizer  Store
-<img src = "demo_images/4.JPG"> <br>
-#### Contact Us 
-<img src = "demo_images/5.png"> <br><br>
+backend/
+    Flask API for Render
+    data/
+    Procfile
+    render.yaml
+    requirements.txt
+
+Model/
+    Original notebook assets
+```
+
+## Local Development
+
+### 1. Start the backend
+
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+copy .env.example .env
+python app.py
+```
+
+Set either of these before starting the backend:
+
+- `HF_MODEL_REPO_ID` to download the model from Hugging Face
+- or `MODEL_PATH` to point to a local `.pt` file during development
+
+### 2. Start the frontend
+
+```bash
+cd frontend
+npm install
+copy .env.example .env
+npm run dev
+```
+
+Set `VITE_API_BASE_URL=http://localhost:5000` for local development.
+
+## Deploy Frontend on Vercel
+
+1. Push the repository to GitHub.
+2. Import the repo into Vercel.
+3. Set the Vercel root directory to `frontend`.
+4. Add the environment variable:
+
+```text
+VITE_API_BASE_URL=https://your-render-service.onrender.com
+```
+
+1. Deploy.
+
+## Deploy Backend on Render
+
+1. Create a new Web Service in Render.
+2. Connect the GitHub repository.
+3. Set root directory to `backend`.
+4. Use these settings:
+
+```text
+Build Command: pip install -r requirements.txt
+Start Command: gunicorn app:app
+```
+
+1. Add these environment variables in Render:
+
+```text
+HF_MODEL_REPO_ID=your-huggingface-username/plant-disease-detection-model
+HF_MODEL_FILENAME=plant_disease_model_1_latest.pt
+CORS_ALLOWED_ORIGINS=https://your-vercel-project.vercel.app
+```
+
+If you want to bypass Hugging Face during local testing, set `MODEL_PATH` instead.
+
+## Host the Model on Hugging Face
+
+1. Create a new model repository on Hugging Face.
+2. Upload your trained model file, for example `plant_disease_model_1_latest.pt`.
+3. If the repository is private, create a Hugging Face access token and set `HF_TOKEN` in Render.
+4. Put the repository name into `HF_MODEL_REPO_ID`.
+
+The backend is already configured to call `hf_hub_download(...)` automatically.
+
+## API Endpoints
+
+- `GET /api/health` returns API status
+- `GET /api/catalog` returns supported crops and class count
+- `POST /api/predict` accepts multipart form data with a `file` field
+
+Example frontend request:
+
+```javascript
+const formData = new FormData();
+formData.append("file", imageFile);
+
+const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/predict`, {
+    method: "POST",
+    body: formData,
+});
+```
+
+## What Changed
+
+- Reworked the UI into a responsive React experience with a new earthy color palette and motion.
+- Replaced server-rendered HTML flow with a JSON API contract for deployment flexibility.
+- Moved model delivery out of the repository and into Hugging Face compatible loading.
+- Moved disease metadata into `backend/data/` so the deployed API is self-contained.
+- Updated project branding and creator details.

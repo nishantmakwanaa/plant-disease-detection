@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: plant-disease-detection-api
+    env: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    plan: free
+    envVars:
+      - key: HF_MODEL_REPO_ID
+        sync: false
+      - key: HF_MODEL_FILENAME
+        value: plant_disease_model_1_latest.pt
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
