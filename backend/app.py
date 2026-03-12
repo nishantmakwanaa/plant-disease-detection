@@ -42,11 +42,43 @@ except RuntimeError:
 
 
 def load_csv_data():
-    with DISEASE_INFO_PATH.open("r", encoding="cp1252", newline="") as disease_file:
-        disease_rows = list(csv.DictReader(disease_file))
+    if not DISEASE_INFO_PATH.exists():
+        raise FileNotFoundError(f"Disease info CSV not found at {DISEASE_INFO_PATH}")
 
-    with SUPPLEMENT_INFO_PATH.open("r", encoding="cp1252", newline="") as supplement_file:
-        supplement_rows = list(csv.DictReader(supplement_file))
+    if not SUPPLEMENT_INFO_PATH.exists():
+        raise FileNotFoundError(f"Supplement info CSV not found at {SUPPLEMENT_INFO_PATH}")
+
+    disease_rows = None
+    supplement_rows = None
+    encodings = ("utf-8-sig", "utf-8", "cp1252")
+
+    for encoding in encodings:
+        try:
+            with DISEASE_INFO_PATH.open("r", encoding=encoding, newline="") as disease_file:
+                disease_rows = list(csv.DictReader(disease_file))
+            break
+        except UnicodeDecodeError:
+            continue
+
+    for encoding in encodings:
+        try:
+            with SUPPLEMENT_INFO_PATH.open("r", encoding=encoding, newline="") as supplement_file:
+                supplement_rows = list(csv.DictReader(supplement_file))
+            break
+        except UnicodeDecodeError:
+            continue
+
+    if disease_rows is None:
+        raise UnicodeDecodeError("csv", b"", 0, 1, f"Unable to decode {DISEASE_INFO_PATH.name}")
+
+    if supplement_rows is None:
+        raise UnicodeDecodeError("csv", b"", 0, 1, f"Unable to decode {SUPPLEMENT_INFO_PATH.name}")
+
+    if not disease_rows:
+        raise ValueError("Disease info CSV is empty")
+
+    if not supplement_rows:
+        raise ValueError("Supplement info CSV is empty")
 
     return disease_rows, supplement_rows
 
@@ -105,6 +137,20 @@ def get_model():
 def get_model_state():
     with MODEL_STATE_LOCK:
         return dict(MODEL_STATE)
+
+
+def get_catalog_state():
+    try:
+        disease_rows, supplement_rows = get_catalog_data()
+    except Exception as error:
+        return {"loaded": False, "error": str(error), "diseaseRows": 0, "supplementRows": 0}
+
+    return {
+        "loaded": True,
+        "error": "",
+        "diseaseRows": len(disease_rows),
+        "supplementRows": len(supplement_rows),
+    }
 
 
 def set_model_state(status: str, error: str = ""):
@@ -202,9 +248,26 @@ def create_app():
     ]
     CORS(app, resources={r"/api/*": {"origins": allowed_origins or "*"}})
 
+    @app.get("/")
+    def index():
+        return jsonify(
+            {
+                "name": "Plant Disease Detection API",
+                "status": "ok",
+                "message": "Use the /api endpoints from the frontend or API client.",
+                "endpoints": {
+                    "health": "/api/health",
+                    "catalog": "/api/catalog",
+                    "warmup": "/api/warmup",
+                    "predict": "/api/predict",
+                },
+            }
+        )
+
     @app.get("/api/health")
     def health_check():
         model_state = get_model_state()
+        catalog_state = get_catalog_state()
         return jsonify(
             {
                 "status": "ok",
@@ -213,6 +276,12 @@ def create_app():
                 "modelLoaded": model_state["status"] == "ready",
                 "modelStatus": model_state["status"],
                 "modelError": model_state["error"],
+                "catalogLoaded": catalog_state["loaded"],
+                "catalogError": catalog_state["error"],
+                "catalogRows": {
+                    "diseaseInfo": catalog_state["diseaseRows"],
+                    "supplementInfo": catalog_state["supplementRows"],
+                },
             }
         )
 
@@ -237,7 +306,11 @@ def create_app():
 
     @app.get("/api/catalog")
     def catalog():
-        _, supplement_info = get_catalog_data()
+        try:
+            _, supplement_info = get_catalog_data()
+        except Exception as error:
+            return jsonify({"error": f"Catalog data unavailable: {error}"}), 500
+
         crop_names = sorted(
             {
                 format_label(label.split(" - ")[0])
@@ -296,11 +369,20 @@ def create_app():
             prediction_index = int(torch.argmax(probabilities).item())
             confidence = float(probabilities[prediction_index].item())
 
-        return jsonify(build_prediction_response(prediction_index, confidence))
+        try:
+            response_payload = build_prediction_response(prediction_index, confidence)
+        except Exception as error:
+            return jsonify({"error": f"Prediction metadata unavailable: {error}"}), 500
+
+        return jsonify(response_payload)
 
     @app.errorhandler(413)
     def payload_too_large(_error):
         return jsonify({"error": "Image is too large. Use an image smaller than 10 MB."}), 413
+
+    @app.errorhandler(500)
+    def internal_server_error(error):
+        return jsonify({"error": f"Internal server error: {error}"}), 500
 
     return app
 
