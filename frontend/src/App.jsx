@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5000").replace(/\/$/, "");
+const backendKeepAliveIntervalMs = 30 * 60 * 1000;
 const datasetTreeApiUrl =
   "https://huggingface.co/api/spaces/nishantmakwanaa/plant-disease-detection-app/tree/main/test_images";
 const datasetImageBaseUrl =
@@ -117,11 +118,21 @@ function App() {
       }
     }
 
+    async function keepBackendAlive() {
+      try {
+        await fetch(`${apiBaseUrl}/api/health`, { cache: "no-store" });
+      } catch {
+        // Ignore keepalive failures; user-triggered requests will surface errors.
+      }
+    }
+
     loadCatalog();
     warmupBackend();
+    const keepAliveTimer = setInterval(keepBackendAlive, backendKeepAliveIntervalMs);
 
     return () => {
       ignore = true;
+      clearInterval(keepAliveTimer);
     };
   }, []);
 

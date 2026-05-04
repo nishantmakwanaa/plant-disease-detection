@@ -140,6 +140,7 @@ VITE_API_BASE_URL=https://your-space-name.hf.space
 1. Call `POST /api/warmup` once after the Space is live.
 
 The frontend already uses the same `/api/catalog` and `/api/predict` paths, so only the base URL needs to change.
+It also sends a `GET /api/health` keepalive request every 30 minutes to help prevent the Space from going idle between user predictions.
 
 ## Host the Model on Hugging Face
 
