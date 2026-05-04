@@ -2,6 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5000").replace(/\/$/, "");
+const datasetTreeApiUrl =
+  "https://huggingface.co/api/spaces/nishantmakwanaa/plant-disease-detection-app/tree/main/test_images";
+const datasetImageBaseUrl =
+  "https://huggingface.co/spaces/nishantmakwanaa/plant-disease-detection-app/resolve/main/test_images";
 
 
 async function readJsonSafely(response) {
@@ -54,7 +58,6 @@ const deploymentCards = [
 const creatorLinks = [
   { label: "GitHub", href: "https://github.com/nishantmakwanaa" },
   { label: "LinkedIn", href: "https://linkedin.com/in/nishantmakwanaa" },
-  { label: "Portfolio", href: "https://nishantmakwanaa.lovable.app" },
 ];
 
 function App() {
@@ -65,6 +68,10 @@ function App() {
   const [error, setError] = useState("");
   const [apiNotice, setApiNotice] = useState("Preparing the backend for the first prediction.");
   const [isLoading, setIsLoading] = useState(false);
+  const [isDatasetOpen, setIsDatasetOpen] = useState(false);
+  const [datasetImages, setDatasetImages] = useState([]);
+  const [isDatasetLoading, setIsDatasetLoading] = useState(false);
+  const [datasetError, setDatasetError] = useState("");
 
   useEffect(() => {
     let ignore = false;
@@ -133,6 +140,64 @@ function App() {
   }, [selectedFile]);
 
   const cropsPreview = useMemo(() => catalog.supportedCrops.slice(0, 8), [catalog.supportedCrops]);
+
+  async function loadDatasetImages() {
+    setDatasetError("");
+    setIsDatasetLoading(true);
+
+    try {
+      const response = await fetch(datasetTreeApiUrl);
+      const data = await readJsonSafely(response);
+
+      if (!response.ok || !Array.isArray(data)) {
+        throw new Error("Failed to load dataset directory.");
+      }
+
+      const images = data
+        .filter((item) => item?.type === "file" && /\.(png|jpe?g|webp)$/i.test(item?.path || ""))
+        .map((item) => {
+          const relativePath = item.path.replace(/^test_images\//, "");
+          const encodedPath = relativePath.split("/").map(encodeURIComponent).join("/");
+          return {
+            name: relativePath.split("/").pop() || relativePath,
+            url: `${datasetImageBaseUrl}/${encodedPath}`,
+          };
+        })
+        .sort((imageA, imageB) => imageA.name.localeCompare(imageB.name));
+
+      setDatasetImages(images);
+    } catch (loadError) {
+      setDatasetError(getApiErrorMessage(loadError, "Failed to load dataset directory."));
+    } finally {
+      setIsDatasetLoading(false);
+    }
+  }
+
+  async function handleDatasetToggle() {
+    const nextOpenState = !isDatasetOpen;
+    setIsDatasetOpen(nextOpenState);
+    if (nextOpenState && datasetImages.length === 0 && !isDatasetLoading) {
+      await loadDatasetImages();
+    }
+  }
+
+  async function handleDatasetImageSelect(image) {
+    setError("");
+
+    try {
+      const response = await fetch(image.url);
+      if (!response.ok) {
+        throw new Error("Failed to download selected dataset image.");
+      }
+      const imageBlob = await response.blob();
+      const fileType = imageBlob.type || (image.name.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg");
+      const imageFile = new File([imageBlob], image.name, { type: fileType });
+      setSelectedFile(imageFile);
+      setApiNotice("");
+    } catch (selectionError) {
+      setError(getApiErrorMessage(selectionError, "Failed to use selected dataset image."));
+    }
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -268,6 +333,41 @@ function App() {
                 <span className="upload-title">Drop a leaf image here or click to browse</span>
                 <span className="upload-subtitle">PNG, JPG, or JPEG up to 10 MB</span>
               </label>
+
+              <div className="dataset-toggle-row">
+                <button className="secondary-button" type="button" onClick={handleDatasetToggle}>
+                  {isDatasetOpen ? "Hide online dataset images" : "Use online dataset images"}
+                </button>
+              </div>
+
+              {isDatasetOpen ? (
+                <div className="dataset-browser">
+                  {isDatasetLoading ? <p className="file-name">Loading dataset images...</p> : null}
+                  {datasetError ? <p className="status-message error">{datasetError}</p> : null}
+
+                  {!isDatasetLoading && !datasetError ? (
+                    datasetImages.length ? (
+                      <div className="dataset-grid">
+                        {datasetImages.map((image) => (
+                          <button
+                            key={image.url}
+                            type="button"
+                            className={`dataset-image-button${selectedFile?.name === image.name ? " active" : ""}`}
+                            onClick={() => handleDatasetImageSelect(image)}
+                          >
+                            <span className="dataset-thumb">
+                              <img src={image.url} alt={image.name} loading="lazy" />
+                            </span>
+                            <span className="dataset-name">{image.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="file-name">No dataset images found in the directory.</p>
+                    )
+                  ) : null}
+                </div>
+              ) : null}
 
               {selectedFile ? <p className="file-name">Selected: {selectedFile.name}</p> : null}
 
