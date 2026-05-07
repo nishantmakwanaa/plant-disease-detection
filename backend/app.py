@@ -1,6 +1,9 @@
 import os
 import csv
 import gc
+import time
+import logging
+import urllib.request
 from functools import lru_cache
 from pathlib import Path
 from threading import Lock, Thread
@@ -11,6 +14,49 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
 os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 os.environ.setdefault("TORCH_NUM_THREADS", "1")
+
+SELF_PING_INTERVAL = int(os.getenv("SELF_PING_INTERVAL", 9000))  # 150 minutes in seconds
+SELF_PING_URL = os.getenv("SELF_PING_URL", "")
+
+logger = logging.getLogger(__name__)
+
+
+def _self_ping_worker():
+    """Background worker that pings the server's own health endpoint
+    every SELF_PING_INTERVAL seconds to keep the Hugging Face Space awake."""
+    while True:
+        time.sleep(SELF_PING_INTERVAL)
+        ping_url = SELF_PING_URL or os.getenv("SELF_PING_URL", "")
+        if not ping_url:
+            logger.warning("[keep-alive] SELF_PING_URL not set, skipping ping")
+            continue
+        try:
+            req = urllib.request.Request(ping_url, method="GET")
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                logger.info(
+                    "[keep-alive] pinged %s — status %s", ping_url, resp.status
+                )
+        except Exception as exc:
+            logger.warning("[keep-alive] ping failed: %s", exc)
+
+
+def start_keep_alive():
+    """Spawn the keep-alive daemon thread."""
+    ping_url = SELF_PING_URL or os.getenv("SELF_PING_URL", "")
+    if not ping_url:
+        logger.info(
+            "[keep-alive] SELF_PING_URL not configured — set it to enable self-ping "
+            "(e.g. https://<your-space>.hf.space/api/health)"
+        )
+        return
+    thread = Thread(target=_self_ping_worker, daemon=True, name="keep-alive-ping")
+    thread.start()
+    logger.info(
+        "[keep-alive] started — pinging %s every %d seconds (~%d minutes)",
+        ping_url,
+        SELF_PING_INTERVAL,
+        SELF_PING_INTERVAL // 60,
+    )
 
 import numpy as np
 import torch
@@ -388,7 +434,10 @@ def create_app():
 
 
 app = create_app()
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+start_keep_alive()
 
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=True)
+
