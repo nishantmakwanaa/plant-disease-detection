@@ -19,4 +19,4 @@ COPY . .
 
 EXPOSE 7860
 
-CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:7860", "--timeout", "180", "--workers", "1", "--threads", "2"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860", "--timeout-keep-alive", "180", "--workers", "1"]

@@ -48,7 +48,7 @@ const deploymentCards = [
   },
   {
     title: "Backend on Render",
-    text: "Flask serves a dedicated inference API with health and prediction endpoints for the UI.",
+    text: "FastAPI serves a dedicated inference API with health and prediction endpoints for the UI.",
   },
   {
     title: "Model on Hugging Face",
@@ -330,7 +330,7 @@ function App() {
           <div className="glass-panel uploader-panel reveal">
             <div className="section-heading compact">
               <p className="eyebrow">Analyzer</p>
-              <h2>Upload a leaf image and call the deployed Flask API.</h2>
+              <h2>Upload a leaf image and call the deployed FastAPI backend.</h2>
             </div>
 
             <form onSubmit={handleSubmit} className="upload-form">

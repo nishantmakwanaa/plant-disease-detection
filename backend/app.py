@@ -4,6 +4,7 @@ import gc
 import time
 import logging
 import urllib.request
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
 from threading import Lock, Thread
@@ -61,8 +62,9 @@ def start_keep_alive():
 import numpy as np
 import torch
 import torch.nn.functional as F
-from flask import Flask, jsonify, request
-from flask_cors import CORS
+from fastapi import FastAPI, File, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from huggingface_hub import hf_hub_download
 from PIL import Image, UnidentifiedImageError
 
@@ -285,77 +287,103 @@ def build_prediction_response(prediction_index: int, confidence: float):
     }
 
 
-def create_app():
-    app = Flask(__name__)
-    app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
+# Maximum upload size: 10 MB
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    """Startup / shutdown lifecycle for the FastAPI application."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    start_keep_alive()
+    yield
+
+
+def create_app() -> FastAPI:
     allowed_origins = [
-        origin.strip() for origin in os.getenv("CORS_ALLOWED_ORIGINS", "*").split(",") if origin.strip()
+        origin.strip()
+        for origin in os.getenv("CORS_ALLOWED_ORIGINS", "*").split(",")
+        if origin.strip()
     ]
-    CORS(app, resources={r"/api/*": {"origins": allowed_origins or "*"}})
 
-    @app.get("/")
-    def index():
-        return jsonify(
-            {
-                "name": "Plant Disease Detection API",
-                "status": "ok",
-                "message": "Use the /api endpoints from the frontend or API client.",
-                "endpoints": {
-                    "health": "/api/health",
-                    "catalog": "/api/catalog",
-                    "warmup": "/api/warmup",
-                    "predict": "/api/predict",
-                },
-            }
-        )
+    application = FastAPI(
+        title="Plant Disease Detection API",
+        description="AI-powered plant disease detection using PyTorch CNN model",
+        version="2.0.0",
+        lifespan=lifespan,
+    )
 
-    @app.get("/api/health")
-    def health_check():
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins or ["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # ── Root ──────────────────────────────────────────────────────────
+    @application.get("/")
+    async def index():
+        return {
+            "name": "Plant Disease Detection API",
+            "status": "ok",
+            "message": "Use the /api endpoints from the frontend or API client.",
+            "endpoints": {
+                "health": "/api/health",
+                "catalog": "/api/catalog",
+                "warmup": "/api/warmup",
+                "predict": "/api/predict",
+            },
+        }
+
+    # ── Health ────────────────────────────────────────────────────────
+    @application.get("/api/health")
+    async def health_check():
         model_state = get_model_state()
         catalog_state = get_catalog_state()
-        return jsonify(
-            {
-                "status": "ok",
-                "model": MODEL_FILENAME,
-                "classes": CLASS_COUNT,
-                "modelLoaded": model_state["status"] == "ready",
-                "modelStatus": model_state["status"],
-                "modelError": model_state["error"],
-                "catalogLoaded": catalog_state["loaded"],
-                "catalogError": catalog_state["error"],
-                "catalogRows": {
-                    "diseaseInfo": catalog_state["diseaseRows"],
-                    "supplementInfo": catalog_state["supplementRows"],
-                },
-            }
-        )
+        return {
+            "status": "ok",
+            "model": MODEL_FILENAME,
+            "classes": CLASS_COUNT,
+            "modelLoaded": model_state["status"] == "ready",
+            "modelStatus": model_state["status"],
+            "modelError": model_state["error"],
+            "catalogLoaded": catalog_state["loaded"],
+            "catalogError": catalog_state["error"],
+            "catalogRows": {
+                "diseaseInfo": catalog_state["diseaseRows"],
+                "supplementInfo": catalog_state["supplementRows"],
+            },
+        }
 
-    @app.post("/api/warmup")
-    def warmup_model():
+    # ── Warmup ────────────────────────────────────────────────────────
+    @application.post("/api/warmup")
+    async def warmup_model():
         model_state = get_model_state()
         if model_state["status"] == "ready":
-            return jsonify({"status": "ok", "modelLoaded": True, "modelStatus": "ready"})
+            return {"status": "ok", "modelLoaded": True, "modelStatus": "ready"}
 
         model_state = ensure_model_warmup(force=model_state["status"] == "error")
-        return (
-            jsonify(
-                {
-                    "status": "warming",
-                    "modelLoaded": False,
-                    "modelStatus": model_state["status"],
-                    "message": "Model warmup started. Retry prediction after the backend finishes loading the model.",
-                }
-            ),
-            202,
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "warming",
+                "modelLoaded": False,
+                "modelStatus": model_state["status"],
+                "message": "Model warmup started. Retry prediction after the backend finishes loading the model.",
+            },
         )
 
-    @app.get("/api/catalog")
-    def catalog():
+    # ── Catalog ───────────────────────────────────────────────────────
+    @application.get("/api/catalog")
+    async def catalog():
         try:
             _, supplement_info = get_catalog_data()
         except Exception as error:
-            return jsonify({"error": f"Catalog data unavailable: {error}"}), 500
+            return JSONResponse(
+                status_code=500,
+                content={"error": f"Catalog data unavailable: {error}"},
+            )
 
         crop_names = sorted(
             {
@@ -364,42 +392,51 @@ def create_app():
                 if label and "background without leaves" not in label.lower()
             }
         )
-        return jsonify(
-            {
-                "projectName": "Plant Disease Detection",
-                "supportedCrops": crop_names,
-                "totalClasses": CLASS_COUNT,
-            }
-        )
+        return {
+            "projectName": "Plant Disease Detection",
+            "supportedCrops": crop_names,
+            "totalClasses": CLASS_COUNT,
+        }
 
-    @app.post("/api/predict")
-    def predict():
+    # ── Predict ───────────────────────────────────────────────────────
+    @application.post("/api/predict")
+    async def predict(file: UploadFile = File(...)):
         model_state = get_model_state()
         if model_state["status"] != "ready":
             model_state = ensure_model_warmup(force=model_state["status"] == "error")
             if model_state["status"] != "ready":
-                response = jsonify(
-                    {
+                return JSONResponse(
+                    status_code=503,
+                    content={
                         "error": "Model is still warming up. Wait a moment and try again.",
                         "modelLoaded": False,
                         "modelStatus": model_state["status"],
-                    }
+                    },
+                    headers={"Retry-After": "20"},
                 )
-                response.status_code = 503
-                response.headers["Retry-After"] = "20"
-                return response
 
-        if "file" not in request.files:
-            return jsonify({"error": "Image file is required under the 'file' field."}), 400
+        if not file.filename:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Please choose an image before submitting."},
+            )
 
-        image_file = request.files["file"]
-        if not image_file.filename:
-            return jsonify({"error": "Please choose an image before submitting."}), 400
+        # Read file content with size check
+        file_content = await file.read()
+        if len(file_content) > MAX_UPLOAD_SIZE:
+            return JSONResponse(
+                status_code=413,
+                content={"error": "Image is too large. Use an image smaller than 10 MB."},
+            )
 
         try:
-            image = Image.open(image_file.stream).convert("RGB")
-        except UnidentifiedImageError:
-            return jsonify({"error": "Unsupported image format. Upload PNG, JPG, or JPEG."}), 400
+            import io
+            image = Image.open(io.BytesIO(file_content)).convert("RGB")
+        except (UnidentifiedImageError, Exception):
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Unsupported image format. Upload PNG, JPG, or JPEG."},
+            )
 
         input_tensor = preprocess_image(image)
 
@@ -408,7 +445,10 @@ def create_app():
                 model = get_model()
             except Exception as error:
                 set_model_state("error", str(error))
-                return jsonify({"error": f"Model could not be loaded: {error}"}), 500
+                return JSONResponse(
+                    status_code=500,
+                    content={"error": f"Model could not be loaded: {error}"},
+                )
 
             output_tensor = model(input_tensor)
             probabilities = F.softmax(output_tensor, dim=1)[0]
@@ -418,26 +458,41 @@ def create_app():
         try:
             response_payload = build_prediction_response(prediction_index, confidence)
         except Exception as error:
-            return jsonify({"error": f"Prediction metadata unavailable: {error}"}), 500
+            return JSONResponse(
+                status_code=500,
+                content={"error": f"Prediction metadata unavailable: {error}"},
+            )
 
-        return jsonify(response_payload)
+        return response_payload
 
-    @app.errorhandler(413)
-    def payload_too_large(_error):
-        return jsonify({"error": "Image is too large. Use an image smaller than 10 MB."}), 413
+    # ── Exception handlers ────────────────────────────────────────────
+    @application.exception_handler(413)
+    async def payload_too_large(request: Request, exc):
+        return JSONResponse(
+            status_code=413,
+            content={"error": "Image is too large. Use an image smaller than 10 MB."},
+        )
 
-    @app.errorhandler(500)
-    def internal_server_error(error):
-        return jsonify({"error": f"Internal server error: {error}"}), 500
+    @application.exception_handler(500)
+    async def internal_server_error(request: Request, exc):
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Internal server error: {exc}"},
+        )
 
-    return app
+    return application
 
 
 app = create_app()
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-start_keep_alive()
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=True)
+    import uvicorn
 
+    uvicorn.run(
+        "app:app",
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "5000")),
+        reload=True,
+        log_level="info",
+    )
