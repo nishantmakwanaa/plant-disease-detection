@@ -1,3 +1,4 @@
+import io
 import os
 import csv
 import gc
@@ -9,56 +10,6 @@ from functools import lru_cache
 from pathlib import Path
 from threading import Lock, Thread
 
-os.environ.setdefault("MALLOC_ARENA_MAX", "2")
-os.environ.setdefault("OMP_NUM_THREADS", "1")
-os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
-os.environ.setdefault("MKL_NUM_THREADS", "1")
-os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
-os.environ.setdefault("TORCH_NUM_THREADS", "1")
-
-SELF_PING_INTERVAL = int(os.getenv("SELF_PING_INTERVAL", 9000))  # 150 minutes in seconds
-SELF_PING_URL = os.getenv("SELF_PING_URL", "")
-
-logger = logging.getLogger(__name__)
-
-
-def _self_ping_worker():
-    """Background worker that pings the server's own health endpoint
-    every SELF_PING_INTERVAL seconds to keep the Hugging Face Space awake."""
-    while True:
-        time.sleep(SELF_PING_INTERVAL)
-        ping_url = SELF_PING_URL or os.getenv("SELF_PING_URL", "")
-        if not ping_url:
-            logger.warning("[keep-alive] SELF_PING_URL not set, skipping ping")
-            continue
-        try:
-            req = urllib.request.Request(ping_url, method="GET")
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                logger.info(
-                    "[keep-alive] pinged %s — status %s", ping_url, resp.status
-                )
-        except Exception as exc:
-            logger.warning("[keep-alive] ping failed: %s", exc)
-
-
-def start_keep_alive():
-    """Spawn the keep-alive daemon thread."""
-    ping_url = SELF_PING_URL or os.getenv("SELF_PING_URL", "")
-    if not ping_url:
-        logger.info(
-            "[keep-alive] SELF_PING_URL not configured — set it to enable self-ping "
-            "(e.g. https://<your-space>.hf.space/api/health)"
-        )
-        return
-    thread = Thread(target=_self_ping_worker, daemon=True, name="keep-alive-ping")
-    thread.start()
-    logger.info(
-        "[keep-alive] started — pinging %s every %d seconds (~%d minutes)",
-        ping_url,
-        SELF_PING_INTERVAL,
-        SELF_PING_INTERVAL // 60,
-    )
-
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -69,6 +20,70 @@ from huggingface_hub import hf_hub_download
 from PIL import Image, UnidentifiedImageError
 
 from model import CNN
+
+
+os.environ.setdefault("MALLOC_ARENA_MAX", "2")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+os.environ.setdefault("TORCH_NUM_THREADS", "1")
+
+SELF_PING_INTERVAL = int(os.getenv("SELF_PING_INTERVAL", "600"))  # 10 minutes
+logger = logging.getLogger(__name__)
+
+
+def resolve_self_ping_url() -> str:
+    """Resolve the health URL to ping for Hugging Face Space keep-alive."""
+    explicit_url = os.getenv("SELF_PING_URL", "").strip()
+    if explicit_url:
+        return explicit_url
+
+    space_host = os.getenv("SPACE_HOST", "").strip()
+    if space_host:
+        return f"https://{space_host}/api/health"
+
+    return ""
+
+
+def _send_keep_alive_ping(ping_url: str) -> None:
+    try:
+        req = urllib.request.Request(ping_url, method="GET")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            logger.info("[keep-alive] pinged %s — status %s", ping_url, resp.status)
+    except Exception as exc:
+        logger.warning("[keep-alive] ping failed: %s", exc)
+
+
+def _self_ping_worker():
+    """Ping the health endpoint every SELF_PING_INTERVAL seconds to keep the Space awake."""
+    while True:
+        ping_url = resolve_self_ping_url()
+        if ping_url:
+            _send_keep_alive_ping(ping_url)
+        else:
+            logger.warning("[keep-alive] no ping URL configured, skipping ping")
+        time.sleep(SELF_PING_INTERVAL)
+
+
+def start_keep_alive():
+    """Spawn the keep-alive daemon thread."""
+    ping_url = resolve_self_ping_url()
+    if not ping_url:
+        logger.info(
+            "[keep-alive] self-ping disabled — set SELF_PING_URL or deploy on Hugging Face "
+            "(SPACE_HOST is auto-detected)"
+        )
+        return
+
+    thread = Thread(target=_self_ping_worker, daemon=True, name="keep-alive-ping")
+    thread.start()
+    logger.info(
+        "[keep-alive] started — pinging %s every %d seconds (~%d minutes)",
+        ping_url,
+        SELF_PING_INTERVAL,
+        SELF_PING_INTERVAL // 60,
+    )
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -341,6 +356,7 @@ def create_app() -> FastAPI:
     async def health_check():
         model_state = get_model_state()
         catalog_state = get_catalog_state()
+        ping_url = resolve_self_ping_url()
         return {
             "status": "ok",
             "model": MODEL_FILENAME,
@@ -353,6 +369,11 @@ def create_app() -> FastAPI:
             "catalogRows": {
                 "diseaseInfo": catalog_state["diseaseRows"],
                 "supplementInfo": catalog_state["supplementRows"],
+            },
+            "keepAlive": {
+                "enabled": bool(ping_url),
+                "pingUrl": ping_url,
+                "intervalSeconds": SELF_PING_INTERVAL,
             },
         }
 
@@ -430,7 +451,6 @@ def create_app() -> FastAPI:
             )
 
         try:
-            import io
             image = Image.open(io.BytesIO(file_content)).convert("RGB")
         except (UnidentifiedImageError, Exception):
             return JSONResponse(

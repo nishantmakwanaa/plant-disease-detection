@@ -46,6 +46,16 @@ HF_TOKEN=your_hugging_face_token
 6. Wait for the build to finish.
 7. After the Space starts, call `POST /api/warmup` once.
 
+## Keep-Alive Self-Ping
+
+Hugging Face Spaces sleep after prolonged inactivity. The backend automatically pings its own `/api/health` endpoint every **10 minutes** to stay awake.
+
+- On HF Spaces, the ping URL is built from the built-in `SPACE_HOST` variable (no manual setup).
+- Override with `SELF_PING_URL=https://your-space.hf.space/api/health` if needed.
+- Change the interval with `SELF_PING_INTERVAL=600` (seconds, default 10 minutes).
+
+Check keep-alive status via `GET /api/health` — the response includes a `keepAlive` object.
+
 ## Local Development
 
 ```bash

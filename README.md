@@ -1,10 +1,10 @@
 # Plant Disease Detection
 
-Plant Disease Detection is a modernized split-deployment Flask + PyTorch project. The app now targets a free production setup with:
+Plant Disease Detection is a modernized split-deployment FastAPI + PyTorch project. The app targets a free production setup with:
 
 - `frontend/` for a React + Vite UI deployed on Vercel
-- `backend/` for a Flask API deployed on Render
-- a PyTorch model stored on Hugging Face and downloaded at backend startup
+- `backend/` for a FastAPI API deployed on Render or Hugging Face Spaces
+- a PyTorch model stored on Hugging Face and downloaded at backend warmup
 
 If Render free-tier memory is not enough for PyTorch inference, the same backend can also be deployed as a Hugging Face Docker Space.
 
@@ -21,7 +21,7 @@ If Render free-tier memory is not enough for PyTorch inference, the same backend
 ```text
 User
     -> Frontend (React UI on Vercel)
-    -> Backend API (Flask on Render)
+    -> Backend API (FastAPI on Render or Hugging Face Spaces)
     -> Model weights (PyTorch file on Hugging Face)
 ```
 
@@ -32,7 +32,7 @@ frontend/
     React UI for Vercel
 
 backend/
-    Flask API for Render
+    FastAPI API for Render / Hugging Face Spaces
     data/
     Procfile
     render.yaml
@@ -49,9 +49,10 @@ Model/
 ```bash
 cd backend
 python -m venv .venv
-.venv\Scripts\activate
+source .venv/bin/activate   # Linux/macOS
+# .venv\Scripts\activate    # Windows
 pip install -r requirements.txt
-copy .env.example .env
+cp .env.example .env
 python app.py
 ```
 
@@ -60,12 +61,14 @@ Set either of these before starting the backend:
 - `HF_MODEL_REPO_ID` to download the model from Hugging Face
 - or `MODEL_PATH` to point to a local `.pt` file during development
 
+The server starts at `http://localhost:5000`. Interactive API docs are at `/docs`.
+
 ### 2. Start the frontend
 
 ```bash
 cd frontend
 npm install
-copy .env.example .env
+cp .env.example .env
 npm run dev
 ```
 
@@ -82,7 +85,7 @@ Set `VITE_API_BASE_URL=http://localhost:5000` for local development.
 VITE_API_BASE_URL=https://your-render-service.onrender.com
 ```
 
-1. Deploy.
+5. Deploy.
 
 ## Deploy Backend on Render
 
@@ -94,10 +97,10 @@ VITE_API_BASE_URL=https://your-render-service.onrender.com
 
 ```text
 Build Command: pip install -r requirements.txt
-Start Command: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 180
+Start Command: uvicorn app:app --host 0.0.0.0 --port $PORT --timeout-keep-alive 180
 ```
 
-1. Add these environment variables in Render:
+6. Add these environment variables in Render:
 
 ```text
 PYTHON_VERSION=3.11.8
@@ -106,9 +109,9 @@ HF_MODEL_FILENAME=plant_disease_model_1_latest.pt
 CORS_ALLOWED_ORIGINS=https://your-vercel-project.vercel.app
 ```
 
-If you deploy with `render.yaml`, the repository already pins Python for you. This matters because newer Render defaults, such as Python 3.14, do not have compatible wheels for the pinned `pandas` and `torch` versions in this backend.
+If you deploy with `render.yaml`, the repository already pins Python for you. This matters because newer Render defaults, such as Python 3.14, do not have compatible wheels for the pinned `torch` version in this backend.
 
-The backend now starts model warmup asynchronously when you call `POST /api/warmup`, or when the first `POST /api/predict` request arrives and the model is still idle. The warmup endpoint returns immediately with `202 Accepted` while the model downloads in the background.
+The backend starts model warmup asynchronously when you call `POST /api/warmup`, or when the first `POST /api/predict` request arrives and the model is still idle. The warmup endpoint returns immediately with `202 Accepted` while the model downloads in the background.
 
 While the model is still loading, `POST /api/predict` returns `503` with a JSON error payload instead of hanging until the hosting platform returns `502`.
 
@@ -129,33 +132,37 @@ HF_MODEL_REPO_ID=your-huggingface-username/plant-disease-detection-model
 HF_MODEL_FILENAME=plant_disease_model_1_latest.pt
 ```
 
-1. If your model repo is private, add `HF_TOKEN` as a Space secret.
-1. Wait for the image build to complete.
-1. Set the frontend environment variable to the Space URL:
+5. If your model repo is private, add `HF_TOKEN` as a Space secret.
+6. Wait for the image build to complete.
+7. Set the frontend environment variable to the Space URL:
 
 ```text
 VITE_API_BASE_URL=https://your-space-name.hf.space
 ```
 
-1. Call `POST /api/warmup` once after the Space is live.
+8. Call `POST /api/warmup` once after the Space is live.
 
-The frontend already uses the same `/api/catalog` and `/api/predict` paths, so only the base URL needs to change.
-It also sends a `GET /api/health` keepalive request every 30 minutes to help prevent the Space from going idle between user predictions.
+The backend includes a built-in keep-alive self-ping that hits `/api/health` every 10 minutes. On Hugging Face Spaces, the ping URL is auto-detected from the `SPACE_HOST` environment variable — no extra configuration needed. You can override it with `SELF_PING_URL` or change the interval with `SELF_PING_INTERVAL` (default: `600` seconds).
+
+The frontend also sends a `GET /api/health` keepalive request every 30 minutes as a secondary safeguard.
 
 ## Host the Model on Hugging Face
 
 1. Create a new model repository on Hugging Face.
 2. Upload your trained model file, for example `plant_disease_model_1_latest.pt`.
-3. If the repository is private, create a Hugging Face access token and set `HF_TOKEN` in Render.
+3. If the repository is private, create a Hugging Face access token and set `HF_TOKEN` in Render or your Space secrets.
 4. Put the repository name into `HF_MODEL_REPO_ID`.
 
 The backend is already configured to call `hf_hub_download(...)` automatically.
 
 ## API Endpoints
 
-- `GET /api/health` returns API status
-- `GET /api/catalog` returns supported crops and class count
-- `POST /api/predict` accepts multipart form data with a `file` field
+- `GET /` — API info
+- `GET /api/health` — health check with model, catalog, and keep-alive status
+- `GET /api/catalog` — supported crops and class count
+- `POST /api/warmup` — trigger background model loading
+- `POST /api/predict` — accepts multipart form data with a `file` field
+- `GET /docs` — interactive Swagger UI (auto-generated by FastAPI)
 
 Example frontend request:
 
@@ -172,7 +179,8 @@ const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/predict`,
 ## What Changed
 
 - Reworked the UI into a responsive React experience with a new earthy color palette and motion.
-- Replaced server-rendered HTML flow with a JSON API contract for deployment flexibility.
+- Replaced server-rendered HTML flow with a FastAPI JSON API contract for deployment flexibility.
 - Moved model delivery out of the repository and into Hugging Face compatible loading.
 - Moved disease metadata into `backend/data/` so the deployed API is self-contained.
+- Added backend self-ping keep-alive (every 10 minutes) for Hugging Face Space deployments.
 - Updated project branding and creator details.
