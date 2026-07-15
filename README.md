@@ -2,7 +2,7 @@
 
 Plant Disease Detection is a modernized split-deployment FastAPI + PyTorch project. The app targets a free production setup with:
 
-- `frontend/` for a React + Vite UI deployed on Vercel
+- `frontend/` for a Next.js + Tailwind UI deployed on Vercel
 - `backend/` for a FastAPI API deployed on Render or Hugging Face Spaces
 - a PyTorch model stored on Hugging Face and downloaded at backend warmup
 
@@ -10,17 +10,17 @@ If Render free-tier memory is not enough for PyTorch inference, the same backend
 
 ## Project Details
 
-- Project name: Plant Disease Detection
-- Created by: Nishant Makwana
-- GitHub: [github.com/nishantmakwanaa](https://github.com/nishantmakwanaa)
-- LinkedIn: [linkedin.com/in/nishantmakwanaa](https://linkedin.com/in/nishantmakwanaa)
-- Portfolio: [nishantmakwanaa.lovable.app](https://nishantmakwanaa.lovable.app)
+1. Project name: Plant Disease Detection
+1. Created by: Nishant Makwana
+1. GitHub: [github.com/nishantmakwanaa](https://github.com/nishantmakwanaa)
+1. LinkedIn: [linkedin.com/in/nishantmakwanaa](https://linkedin.com/in/nishantmakwanaa)
+1. Portfolio: [nishantmakwanaa.lovable.app](https://nishantmakwanaa.lovable.app)
 
 ## Architecture
 
 ```text
 User
-    -> Frontend (React UI on Vercel)
+    -> Frontend (Next.js UI on Vercel)
     -> Backend API (FastAPI on Render or Hugging Face Spaces)
     -> Model weights (PyTorch file on Hugging Face)
 ```
@@ -29,7 +29,7 @@ User
 
 ```text
 frontend/
-    React UI for Vercel
+    Next.js + Tailwind UI for Vercel
 
 backend/
     FastAPI API for Render / Hugging Face Spaces
@@ -68,11 +68,11 @@ The server starts at `http://localhost:5000`. Interactive API docs are at `/docs
 ```bash
 cd frontend
 npm install
-cp .env.example .env
+cp .env.example .env.local
 npm run dev
 ```
 
-Set `VITE_API_BASE_URL=http://localhost:5000` for local development.
+Set `NEXT_PUBLIC_API_BASE_URL=http://localhost:5000` for local development. The app runs at `http://localhost:3000`.
 
 ## Deploy Frontend on Vercel
 
@@ -82,7 +82,7 @@ Set `VITE_API_BASE_URL=http://localhost:5000` for local development.
 4. Add the environment variable:
 
 ```text
-VITE_API_BASE_URL=https://your-render-service.onrender.com
+NEXT_PUBLIC_API_BASE_URL=https://your-render-service.onrender.com
 ```
 
 5. Deploy.
@@ -137,7 +137,7 @@ HF_MODEL_FILENAME=plant_disease_model_1_latest.pt
 7. Set the frontend environment variable to the Space URL:
 
 ```text
-VITE_API_BASE_URL=https://your-space-name.hf.space
+NEXT_PUBLIC_API_BASE_URL=https://your-space-name.hf.space
 ```
 
 8. Call `POST /api/warmup` once after the Space is live.
@@ -170,7 +170,7 @@ Example frontend request:
 const formData = new FormData();
 formData.append("file", imageFile);
 
-const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/predict`, {
+const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/predict`, {
     method: "POST",
     body: formData,
 });
@@ -178,7 +178,7 @@ const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/predict`,
 
 ## What Changed
 
-- Reworked the UI into a responsive React experience with a new earthy color palette and motion.
+- Reworked the UI into a responsive Next.js + Tailwind experience with the existing earthy color palette and motion.
 - Replaced server-rendered HTML flow with a FastAPI JSON API contract for deployment flexibility.
 - Moved model delivery out of the repository and into Hugging Face compatible loading.
 - Moved disease metadata into `backend/data/` so the deployed API is self-contained.

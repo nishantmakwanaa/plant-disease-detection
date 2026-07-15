@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --bg: #f4efe4;
+  --surface: rgba(255, 250, 242, 0.78);
+  --surface-strong: rgba(255, 248, 236, 0.92);
+  --text: #19281f;
+  --muted: #4f6558;
+  --border: rgba(64, 90, 72, 0.12);
+  --primary: #1f6f43;
+  --primary-dark: #11472a;
+  --accent: #d77a2b;
+  --accent-soft: #f4b97f;
+  --shadow: 0 28px 80px rgba(34, 58, 43, 0.12);
+}
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-strong: var(--surface-strong);
+  --color-ink: var(--text);
+  --color-muted: var(--muted);
+  --color-line: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-dark: var(--primary-dark);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --font-sans: var(--font-dm-sans);
+  --font-display: var(--font-space-grotesk);
+  --shadow-panel: var(--shadow);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-width: 320px;
+  background:
+    radial-gradient(circle at top left, rgba(160, 211, 160, 0.45), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(244, 185, 127, 0.42), transparent 30%),
+    linear-gradient(135deg, #f5f0e3 0%, #eef5e9 50%, #f7ede0 100%);
+  color: var(--text);
+  font-family: var(--font-dm-sans), sans-serif;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.03);
+  }
+}
+
+@utility animate-fade-up {
+  animation: fade-up 700ms ease both;
+}
+
+@utility animate-fade-up-delay {
+  animation: fade-up 700ms ease both;
+  animation-delay: 140ms;
+}
+
+@utility animate-pulse-soft {
+  animation: pulse-soft 2.8s ease-in-out infinite;
+}
+
+/* Slightly wider phones get a 3-column dataset grid */
+@custom-variant xs (@media (min-width: 420px));
+
