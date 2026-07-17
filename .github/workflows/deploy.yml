@@ -51,7 +51,8 @@ jobs:
 
           cd /tmp/hf-deploy
 
-          git init
+          git init -b main
+
           git lfs install
 
           git config user.email "github-actions@github.com"
