@@ -11,7 +11,7 @@ jobs:
 
     env:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
-      HF_USERNAME: ${{ vars.HF_USERNAME }}
+      HF_USERNAME: ${{ secrets.HF_USERNAME }}
 
     steps:
       - name: Checkout Repository
@@ -30,7 +30,17 @@ jobs:
           git config --global user.email "github-actions@github.com"
           git config --global user.name "GitHub Actions"
 
-      - name: Push to Hugging Face Space
+      - name: Verify Secrets
+        run: |
+          echo "HF Username: $HF_USERNAME"
+          if [ -z "$HF_TOKEN" ]; then
+            echo "HF_TOKEN is missing"
+            exit 1
+          else
+            echo "HF_TOKEN is configured"
+          fi
+
+      - name: Deploy to Hugging Face Space
         run: |
           git remote add hf https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/plant-disease-detection-app
           git push --force hf main
