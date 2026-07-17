@@ -47,7 +47,10 @@ jobs:
             --exclude "demo_images" \
             --exclude "test_images" \
             --exclude "Model" \
-            --exclude "*.pdf"
+            --exclude "*.pdf" \
+            --exclude ".env" \
+            --exclude ".env.*" \
+            --exclude "node_modules"
 
           cd /tmp/hf-deploy
 
