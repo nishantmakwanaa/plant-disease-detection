@@ -25,14 +25,10 @@ jobs:
           git lfs install
           git lfs pull
 
-      - name: Configure Git
-        run: |
-          git config --global user.email "github-actions@github.com"
-          git config --global user.name "GitHub Actions"
-
       - name: Verify Secrets
         run: |
           echo "HF Username: $HF_USERNAME"
+
           if [ -z "$HF_TOKEN" ]; then
             echo "HF_TOKEN is missing"
             exit 1
@@ -40,7 +36,33 @@ jobs:
             echo "HF_TOKEN is configured"
           fi
 
-      - name: Deploy to Hugging Face Space
+      - name: Prepare Hugging Face Deployment
         run: |
+          mkdir /tmp/hf-deploy
+
+          rsync -av ./ /tmp/hf-deploy \
+            --exclude ".git" \
+            --exclude ".github" \
+            --exclude "frontend" \
+            --exclude "demo_images" \
+            --exclude "test_images" \
+            --exclude "Model" \
+            --exclude "*.pdf"
+
+          cd /tmp/hf-deploy
+
+          git init
+          git lfs install
+
+          git config user.email "github-actions@github.com"
+          git config user.name "GitHub Actions"
+
           git remote add hf https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/plant-disease-detection-app
+
+          git add .
+          git commit -m "Deploy backend from GitHub Actions"
+
+      - name: Push to Hugging Face Space
+        run: |
+          cd /tmp/hf-deploy
           git push --force hf main
