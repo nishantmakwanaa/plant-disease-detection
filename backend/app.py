@@ -88,10 +88,10 @@ def start_keep_alive():
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
-DISEASE_INFO_PATH = Path(os.getenv("DISEASE_INFO_PATH", DATA_DIR / "disease_info.csv"))
-SUPPLEMENT_INFO_PATH = Path(os.getenv("SUPPLEMENT_INFO_PATH", DATA_DIR / "supplement_info.csv"))
 CLASS_COUNT = 39
 MODEL_FILENAME = os.getenv("HF_MODEL_FILENAME", "plant_disease_model_1_latest.pt")
+MODEL_DIR = BASE_DIR / "model"
+MODEL_DATASETS_DIR = MODEL_DIR / "datasets"
 MODEL_LOCK = Lock()
 MODEL_STATE_LOCK = Lock()
 MODEL_STATE = {"status": "idle", "error": ""}
@@ -102,6 +102,30 @@ try:
     torch.set_num_interop_threads(1)
 except RuntimeError:
     pass
+
+
+def resolve_data_path(env_name: str, *fallback_paths: Path) -> Path:
+    configured_path = os.getenv(env_name)
+    if configured_path:
+        return Path(configured_path).expanduser().resolve()
+
+    for fallback_path in fallback_paths:
+        if fallback_path.exists():
+            return fallback_path
+
+    return fallback_paths[0]
+
+
+DISEASE_INFO_PATH = resolve_data_path(
+    "DISEASE_INFO_PATH",
+    MODEL_DATASETS_DIR / "disease_info.csv",
+    DATA_DIR / "disease_info.csv",
+)
+SUPPLEMENT_INFO_PATH = resolve_data_path(
+    "SUPPLEMENT_INFO_PATH",
+    MODEL_DATASETS_DIR / "supplement_info.csv",
+    DATA_DIR / "supplement_info.csv",
+)
 
 
 def load_csv_data():
@@ -158,10 +182,20 @@ def resolve_model_path() -> Path:
         if resolved_path.exists():
             return resolved_path
 
+    local_model_candidates = (
+        BASE_DIR / MODEL_FILENAME,
+        MODEL_DIR / MODEL_FILENAME,
+    )
+    for candidate in local_model_candidates:
+        if candidate.exists():
+            return candidate
+
     repo_id = os.getenv("HF_MODEL_REPO_ID")
     if not repo_id:
+        search_locations = ", ".join(str(path) for path in local_model_candidates)
         raise RuntimeError(
-            "Set HF_MODEL_REPO_ID for Hugging Face model loading or MODEL_PATH for a local model file."
+            "Set HF_MODEL_REPO_ID for Hugging Face model loading or MODEL_PATH for a local model file. "
+            f"Searched default local model paths: {search_locations}."
         )
 
     download_path = hf_hub_download(

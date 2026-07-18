@@ -33,7 +33,7 @@ frontend/
 
 backend/
     FastAPI API for Render / Hugging Face Spaces
-    data/
+    model/datasets/
     Procfile
     render.yaml
     requirements.txt
@@ -181,6 +181,6 @@ const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/predic
 - Reworked the UI into a responsive Next.js + Tailwind experience with the existing earthy color palette and motion.
 - Replaced server-rendered HTML flow with a FastAPI JSON API contract for deployment flexibility.
 - Moved model delivery out of the repository and into Hugging Face compatible loading.
-- Moved disease metadata into `backend/data/` so the deployed API is self-contained.
+- Moved disease metadata into `backend/model/datasets/` so the deployed API is self-contained.
 - Added backend self-ping keep-alive (every 10 minutes) for Hugging Face Space deployments.
 - Updated project branding and creator details.
