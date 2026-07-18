@@ -69,6 +69,16 @@ python app.py
 
 The server starts at `http://localhost:5000` with auto-reload enabled.
 
+Catalog metadata is auto-resolved from:
+
+- `backend/model/datasets/disease_info.csv`
+- `backend/model/datasets/supplement_info.csv`
+
+Override these defaults with:
+
+- `DISEASE_INFO_PATH=/absolute/path/to/disease_info.csv`
+- `SUPPLEMENT_INFO_PATH=/absolute/path/to/supplement_info.csv`
+
 ## Frontend Configuration
 
 Point the frontend at the Space URL:
