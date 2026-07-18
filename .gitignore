@@ -8,7 +8,10 @@ backend/.pytest_cache/
 backend/.mypy_cache/
 backend/.cache/
 backend/venv/
-backend/plant_disease_model_1_latest.pt
+backend/model/plant_disease_model.pt
+backend/model/datasets/training_dataset
+backend/model/datasets/testing_dataset
+backend/model/datasets/training_dataset
 *.pt
 *.pyc
 *.pyo
