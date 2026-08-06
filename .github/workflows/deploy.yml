@@ -36,11 +36,16 @@ jobs:
 
           echo "HF_TOKEN configured"
 
-      - name: Prepare Backend Deployment
+      - name: Deploy Updated Code to Hugging Face Space
         run: |
-          mkdir /tmp/hf-deploy
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
 
-          rsync -av backend/ /tmp/hf-deploy \
+          # Clone existing Space repo to preserve existing files (such as plant_disease_model_1_latest.pt)
+          git clone https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/plant-disease-detection-app /tmp/hf-space
+
+          # Sync updated backend files without --delete flag so model binaries are NEVER wiped
+          rsync -av backend/ /tmp/hf-space/ \
             --exclude ".env" \
             --exclude ".env.*" \
             --exclude "__pycache__" \
@@ -49,25 +54,16 @@ jobs:
             --exclude "model/datasets" \
             --exclude ".ipynb_checkpoints"
 
-          cd /tmp/hf-deploy
-
-          git init -b main
+          cd /tmp/hf-space
 
           git lfs install
-          git lfs track "*.pt"
-
-
-          git config user.email "github-actions@github.com"
-          git config user.name "GitHub Actions"
-
-          git remote add hf https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/plant-disease-detection-app
 
           git add .
 
-          git commit -m "Deploy backend from GitHub Actions"
-
-      - name: Push Backend to Hugging Face
-        run: |
-          cd /tmp/hf-deploy
-          git push --force hf main
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update backend code from GitHub Actions"
+            git push origin main
+          else
+            echo "No code changes to deploy."
+          fi
 
