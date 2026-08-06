@@ -13,9 +13,13 @@ from threading import Lock, Thread
 import numpy as np
 import torch
 import torch.nn.functional as F
+from PIL import Image, UnidentifiedImageError
+from huggingface_hub import hf_hub_download
 from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+
+from model import CNN
 
 SELF_PING_INTERVAL = int(os.getenv("SELF_PING_INTERVAL", "300"))  # 5 minutes
 logger = logging.getLogger(__name__)
