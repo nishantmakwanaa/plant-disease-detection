@@ -44,13 +44,19 @@ jobs:
             --exclude ".env" \
             --exclude ".env.*" \
             --exclude "__pycache__" \
-            --exclude "*.pyc"
+            --exclude "*.pyc" \
+            --exclude "model/train_dataset" \
+            --exclude "model/test_dataset" \
+            --exclude "model/datasets" \
+            --exclude ".ipynb_checkpoints"
 
           cd /tmp/hf-deploy
 
           git init -b main
 
           git lfs install
+          git lfs track "*.pt"
+
 
           git config user.email "github-actions@github.com"
           git config user.name "GitHub Actions"

@@ -118,14 +118,17 @@ def resolve_data_path(env_name: str, *fallback_paths: Path) -> Path:
 
 DISEASE_INFO_PATH = resolve_data_path(
     "DISEASE_INFO_PATH",
+    MODEL_DIR / "disease_info.csv",
     MODEL_DATASETS_DIR / "disease_info.csv",
     DATA_DIR / "disease_info.csv",
 )
 SUPPLEMENT_INFO_PATH = resolve_data_path(
     "SUPPLEMENT_INFO_PATH",
+    MODEL_DIR / "supplement_info.csv",
     MODEL_DATASETS_DIR / "supplement_info.csv",
     DATA_DIR / "supplement_info.csv",
 )
+
 
 
 def load_csv_data():
@@ -194,8 +197,9 @@ def resolve_model_path() -> Path:
     if not repo_id:
         search_locations = ", ".join(str(path) for path in local_model_candidates)
         raise RuntimeError(
-            "Set HF_MODEL_REPO_ID for Hugging Face model loading or MODEL_PATH for a local model file. "
-            f"Searched default local model paths: {search_locations}."
+            f"Model file '{MODEL_FILENAME}' not found. Please upload '{MODEL_FILENAME}' to "
+            f"'backend/model/{MODEL_FILENAME}' (or 'backend/{MODEL_FILENAME}'), "
+            f"or set MODEL_PATH environment variable to point to your model file."
         )
 
     download_path = hf_hub_download(
