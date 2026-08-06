@@ -193,21 +193,23 @@ def resolve_model_path() -> Path:
         if candidate.exists():
             return candidate
 
-    repo_id = os.getenv("HF_MODEL_REPO_ID")
-    if not repo_id:
-        search_locations = ", ".join(str(path) for path in local_model_candidates)
-        raise RuntimeError(
-            f"Model file '{MODEL_FILENAME}' not found. Please upload '{MODEL_FILENAME}' to "
-            f"'backend/model/{MODEL_FILENAME}' (or 'backend/{MODEL_FILENAME}'), "
-            f"or set MODEL_PATH environment variable to point to your model file."
-        )
+    repo_id = os.getenv("HF_MODEL_REPO_ID", "spaces/nishantmakwanaa/plant-disease-detection-app")
+    repo_type = os.getenv("HF_REPO_TYPE")
+    if not repo_type:
+        repo_type = "space" if repo_id.startswith("spaces/") or "spaces/" in repo_id else None
 
-    download_path = hf_hub_download(
-        repo_id=repo_id,
-        filename=MODEL_FILENAME,
-        token=os.getenv("HF_TOKEN") or None,
-        local_dir=BASE_DIR / ".cache" / "hf-models",
-    )
+    clean_repo_id = repo_id.replace("spaces/", "")
+
+    kwargs = {
+        "repo_id": clean_repo_id,
+        "filename": MODEL_FILENAME,
+        "token": os.getenv("HF_TOKEN") or None,
+        "local_dir": BASE_DIR / ".cache" / "hf-models",
+    }
+    if repo_type:
+        kwargs["repo_type"] = repo_type
+
+    download_path = hf_hub_download(**kwargs)
     return Path(download_path)
 
 
