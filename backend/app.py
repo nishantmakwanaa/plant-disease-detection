@@ -108,7 +108,9 @@ except RuntimeError:
 def resolve_data_path(env_name: str, *fallback_paths: Path) -> Path:
     configured_path = os.getenv(env_name)
     if configured_path:
-        return Path(configured_path).expanduser().resolve()
+        path = Path(configured_path).expanduser().resolve()
+        if path.exists():
+            return path
 
     for fallback_path in fallback_paths:
         if fallback_path.exists():
@@ -133,6 +135,8 @@ TEST_DATASET_DIR = resolve_data_path(
     "TEST_DATASET_DIR",
     MODEL_DIR / "test_dataset",
     BASE_DIR / "test_dataset",
+    MODEL_DATASETS_DIR / "test_dataset",
+    DATA_DIR / "test_dataset",
     MODEL_DIR / "demo-images",
     BASE_DIR / "demo-images",
 )
