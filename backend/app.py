@@ -29,6 +29,11 @@ def resolve_self_ping_url() -> str:
     """Resolve the health URL to ping for Hugging Face Space keep-alive."""
     explicit_url = os.getenv("SELF_PING_URL", "").strip()
     if explicit_url:
+        if "nishantmakwanaa-plant-disease-detection.hf.space" in explicit_url:
+            explicit_url = explicit_url.replace(
+                "nishantmakwanaa-plant-disease-detection.hf.space",
+                "nishantmakwanaa-plant-disease-detection-app.hf.space",
+            )
         return explicit_url
 
     space_host = os.getenv("SPACE_HOST", "").strip()

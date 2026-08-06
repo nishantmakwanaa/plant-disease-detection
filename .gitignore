@@ -9,7 +9,6 @@ backend/.mypy_cache/
 backend/.cache/
 backend/venv/
 backend/model/train_dataset/
-backend/model/test_dataset/
 backend/model/datasets/
 *.pyc
 *.pyo
