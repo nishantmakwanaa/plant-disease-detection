@@ -2,13 +2,10 @@ export const apiBaseUrl = (
   process.env.NEXT_PUBLIC_API_BASE_URL || "https://nishantmakwanaa-plant-disease-detection-app.hf.space"
 ).replace(/\/$/, "");
 
-export const backendKeepAliveIntervalMs = 30 * 60 * 1000;
+export const backendKeepAliveIntervalMs = 5 * 60 * 1000; // 5 minutes
 
-export const datasetTreeApiUrl =
-  "https://huggingface.co/api/spaces/nishantmakwanaa/plant-disease-detection-app/tree/main/test_images";
-
-export const datasetImageBaseUrl =
-  "https://huggingface.co/spaces/nishantmakwanaa/plant-disease-detection-app/resolve/main/test_images";
+export const datasetImagesApiUrl = `${apiBaseUrl}/api/test-dataset`;
+export const demoImagesApiUrl = datasetImagesApiUrl;
 
 export async function readJsonSafely(response) {
   if (!response || !response.ok) {

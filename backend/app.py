@@ -15,21 +15,9 @@ import torch
 import torch.nn.functional as F
 from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from huggingface_hub import hf_hub_download
-from PIL import Image, UnidentifiedImageError
+from fastapi.responses import FileResponse, JSONResponse
 
-from model import CNN
-
-
-os.environ.setdefault("MALLOC_ARENA_MAX", "2")
-os.environ.setdefault("OMP_NUM_THREADS", "1")
-os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
-os.environ.setdefault("MKL_NUM_THREADS", "1")
-os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
-os.environ.setdefault("TORCH_NUM_THREADS", "1")
-
-SELF_PING_INTERVAL = int(os.getenv("SELF_PING_INTERVAL", "600"))  # 10 minutes
+SELF_PING_INTERVAL = int(os.getenv("SELF_PING_INTERVAL", "300"))  # 5 minutes
 logger = logging.getLogger(__name__)
 
 
@@ -54,9 +42,18 @@ def _send_keep_alive_ping(ping_url: str) -> None:
     except Exception as exc:
         logger.warning("[keep-alive] ping failed: %s", exc)
 
+    if "/api/health" in ping_url:
+        warmup_url = ping_url.replace("/api/health", "/api/warmup")
+        try:
+            req_w = urllib.request.Request(warmup_url, method="POST", data=b"")
+            with urllib.request.urlopen(req_w, timeout=30) as resp_w:
+                logger.info("[keep-alive] warmed up %s — status %s", warmup_url, resp_w.status)
+        except Exception as exc_w:
+            logger.warning("[keep-alive] warmup ping failed: %s", exc_w)
+
 
 def _self_ping_worker():
-    """Ping the health endpoint every SELF_PING_INTERVAL seconds to keep the Space awake."""
+    """Ping health and warmup endpoints every SELF_PING_INTERVAL seconds to keep the Space awake."""
     while True:
         ping_url = resolve_self_ping_url()
         if ping_url:
@@ -128,6 +125,14 @@ SUPPLEMENT_INFO_PATH = resolve_data_path(
     MODEL_DATASETS_DIR / "supplement_info.csv",
     DATA_DIR / "supplement_info.csv",
 )
+TEST_DATASET_DIR = resolve_data_path(
+    "TEST_DATASET_DIR",
+    MODEL_DIR / "test_dataset",
+    BASE_DIR / "test_dataset",
+    MODEL_DIR / "demo-images",
+    BASE_DIR / "demo-images",
+)
+DEMO_IMAGES_DIR = TEST_DATASET_DIR
 
 
 
@@ -458,6 +463,37 @@ def create_app() -> FastAPI:
             "supportedCrops": crop_names,
             "totalClasses": CLASS_COUNT,
         }
+
+    # ── Test Dataset / Demo Images ─────────────────────────────────────
+    @application.get("/api/test-dataset")
+    @application.get("/api/demo-images")
+    async def get_test_dataset_images():
+        if not TEST_DATASET_DIR.exists():
+            return JSONResponse(status_code=404, content={"error": "Test dataset directory not found."})
+
+        valid_extensions = {".jpg", ".jpeg", ".png", ".webp"}
+        dataset_images = []
+
+        for file_path in sorted(TEST_DATASET_DIR.iterdir()):
+            if file_path.is_file() and file_path.suffix.lower() in valid_extensions:
+                formatted_name = format_label(file_path.stem)
+                dataset_images.append({
+                    "name": formatted_name,
+                    "filename": file_path.name,
+                    "url": f"/api/test-dataset/{file_path.name}",
+                })
+
+        return dataset_images
+
+    @application.get("/api/test-dataset/{filename}")
+    @application.get("/api/demo-images/{filename}")
+    async def serve_test_dataset_image(filename: str):
+        file_path = TEST_DATASET_DIR / filename
+        if not file_path.exists() or not file_path.is_file():
+            return JSONResponse(status_code=404, content={"error": "Image not found."})
+
+        media_type = "image/png" if filename.lower().endswith(".png") else "image/jpeg"
+        return FileResponse(path=file_path, media_type=media_type)
 
     # ── Predict ───────────────────────────────────────────────────────
     @application.post("/api/predict")

@@ -46,7 +46,6 @@ jobs:
             --exclude "__pycache__" \
             --exclude "*.pyc" \
             --exclude "model/train_dataset" \
-            --exclude "model/test_dataset" \
             --exclude "model/datasets" \
             --exclude ".ipynb_checkpoints"
 

@@ -5,8 +5,7 @@ import DatasetDialog from "@/components/DatasetDialog";
 import {
   apiBaseUrl,
   backendKeepAliveIntervalMs,
-  datasetImageBaseUrl,
-  datasetTreeApiUrl,
+  demoImagesApiUrl,
   getApiErrorMessage,
   readJsonSafely,
 } from "@/lib/api";
@@ -151,6 +150,7 @@ export default function PlantDiseaseApp() {
     async function keepBackendAlive() {
       try {
         await fetch(`${apiBaseUrl}/api/health`, { cache: "no-store" });
+        await fetch(`${apiBaseUrl}/api/warmup`, { method: "POST" });
       } catch {
         // Ignore keepalive failures; user-triggered requests will surface errors.
       }
@@ -173,7 +173,7 @@ export default function PlantDiseaseApp() {
     setIsDatasetLoading(true);
 
     try {
-      const response = await fetch(datasetTreeApiUrl);
+      const response = await fetch(demoImagesApiUrl);
       const data = await readJsonSafely(response);
 
       if (!response.ok || !Array.isArray(data)) {
@@ -181,15 +181,10 @@ export default function PlantDiseaseApp() {
       }
 
       const images = data
-        .filter((item) => item?.type === "file" && /\.(png|jpe?g|webp)$/i.test(item?.path || ""))
-        .map((item) => {
-          const relativePath = item.path.replace(/^test_images\//, "");
-          const encodedPath = relativePath.split("/").map(encodeURIComponent).join("/");
-          return {
-            name: relativePath.split("/").pop() || relativePath,
-            url: `${datasetImageBaseUrl}/${encodedPath}`,
-          };
-        })
+        .map((item) => ({
+          name: item.name || item.filename,
+          url: item.url.startsWith("http") ? item.url : `${apiBaseUrl}${item.url}`,
+        }))
         .sort((imageA, imageB) => imageA.name.localeCompare(imageB.name));
 
       setDatasetImages(images);
